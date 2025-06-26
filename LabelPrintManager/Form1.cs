@@ -17,6 +17,10 @@ namespace LabelPrintManager
         private ApiService _apiService;
         private BarTenderService _barTenderService;
         private PurchaseReceiptModel _currentReceiptData;
+
+        // BackgroundWorker 相關
+        private BackgroundWorker _printWorker;
+        private ProgressForm _progressForm;
         private readonly object _previewLock = new object(); // 預覽更新鎖定
 
         public Form1()
@@ -76,8 +80,13 @@ namespace LabelPrintManager
             textBoxHwVer.Enabled = false;
             textBoxFwVer.Enabled = false;
             textBoxProductName.Enabled = false;
+            comboBoxPrinter.Enabled = false;
+            textBoxCopies.Enabled = false;
             buttonUpdatePreview.Enabled = false;
             buttonPrint.Enabled = false;
+
+            // 初始化印表機清單
+            InitializePrinters();
 
             // 設定視覺提示
             SetGroupBoxState(groupBoxApiData, false, "請先載入 BTW 檔案");
@@ -108,6 +117,8 @@ namespace LabelPrintManager
             textBoxHwVer.Enabled = false;
             textBoxFwVer.Enabled = false;
             textBoxProductName.Enabled = false;
+            comboBoxPrinter.Enabled = false;
+            textBoxCopies.Enabled = false;
             buttonUpdatePreview.Enabled = false;
             buttonPrint.Enabled = false;
 
@@ -140,6 +151,8 @@ namespace LabelPrintManager
             textBoxHwVer.Enabled = true;
             textBoxFwVer.Enabled = true;
             textBoxProductName.Enabled = true;
+            comboBoxPrinter.Enabled = true;
+            textBoxCopies.Enabled = true;
             buttonUpdatePreview.Enabled = true;
             buttonPrint.Enabled = true;
 
@@ -351,70 +364,7 @@ namespace LabelPrintManager
             richTextBoxApiResult.Text = sb.ToString();
         }
 
-        /// <summary>
-        /// 列印按鈕點擊事件
-        /// </summary>
-        private void buttonPrint_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                // 驗證必要條件
-                if (string.IsNullOrWhiteSpace(textBoxBtwPath.Text))
-                {
-                    MessageBox.Show("請先選擇 BTW 檔案", "列印錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
 
-                if (_currentReceiptData == null)
-                {
-                    MessageBox.Show("請先獲取進貨單資料", "列印錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
-                if (string.IsNullOrWhiteSpace(textBoxQuantity.Text))
-                {
-                    MessageBox.Show("請輸入列印數量", "列印錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
-                // 確認列印
-                DialogResult result = MessageBox.Show(
-                    "確定要列印標籤嗎？\n\n" +
-                    $"BTW檔案: {System.IO.Path.GetFileName(textBoxBtwPath.Text)}\n" +
-                    $"品號: {_currentReceiptData.ProductCode}\n" +
-                    $"數量: {textBoxQuantity.Text}\n" +
-                    $"D/C: {textBoxDc.Text}\n" +
-                    $"HW Ver: {textBoxHwVer.Text}\n" +
-                    $"FW Ver: {textBoxFwVer.Text}",
-                    "確認列印",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question
-                );
-
-                if (result == DialogResult.Yes)
-                {
-                    // 設定 BarTender 欄位值
-                    SetBarTenderFields();
-
-                    // 執行列印
-                    if (int.TryParse(textBoxQuantity.Text, out int copies))
-                    {
-                        if (_barTenderService.PrintLabel(copies))
-                        {
-                            MessageBox.Show("列印完成！", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        }
-                    }
-                    else
-                    {
-                        MessageBox.Show("數量格式錯誤", "列印錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"列印時發生錯誤: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
 
         /// <summary>
         /// 更新預覽按鈕點擊事件
@@ -830,12 +780,306 @@ namespace LabelPrintManager
         }
 
         /// <summary>
+        /// 初始化印表機清單
+        /// </summary>
+        private void InitializePrinters()
+        {
+            try
+            {
+                if (_barTenderService != null)
+                {
+                    // 獲取可用印表機清單
+                    List<string> printers = _barTenderService.GetAvailablePrinters();
+
+                    comboBoxPrinter.Items.Clear();
+                    foreach (string printer in printers)
+                    {
+                        comboBoxPrinter.Items.Add(printer);
+                    }
+
+                    // 設定預設印表機
+                    if (comboBoxPrinter.Items.Count > 0)
+                    {
+                        string defaultPrinter = _barTenderService.GetDefaultPrinter();
+                        int defaultIndex = comboBoxPrinter.Items.IndexOf(defaultPrinter);
+
+                        if (defaultIndex >= 0)
+                        {
+                            comboBoxPrinter.SelectedIndex = defaultIndex;
+                        }
+                        else
+                        {
+                            comboBoxPrinter.SelectedIndex = 0;
+                        }
+
+                        // 設定選擇的印表機到服務
+                        _barTenderService.SetSelectedPrinter(comboBoxPrinter.SelectedItem.ToString());
+                    }
+
+                    Console.WriteLine($"印表機初始化完成，共找到 {printers.Count} 台印表機");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"初始化印表機時發生錯誤: {ex.Message}");
+                MessageBox.Show($"初始化印表機時發生錯誤: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        /// <summary>
+        /// 印表機選擇變更事件
+        /// </summary>
+        private void comboBoxPrinter_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                if (comboBoxPrinter.SelectedItem != null && _barTenderService != null)
+                {
+                    string selectedPrinter = comboBoxPrinter.SelectedItem.ToString();
+                    _barTenderService.SetSelectedPrinter(selectedPrinter);
+                    Console.WriteLine($"選擇印表機: {selectedPrinter}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"設定印表機時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 列印按鈕點擊事件
+        /// </summary>
+        private void buttonPrint_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // 驗證列印份數
+                if (!int.TryParse(textBoxCopies.Text, out int copies) || copies < 1 || copies > 999)
+                {
+                    MessageBox.Show("請輸入有效的列印份數（1-999）", "輸入錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    textBoxCopies.Focus();
+                    return;
+                }
+
+                // 確認印表機選擇
+                if (comboBoxPrinter.SelectedItem == null)
+                {
+                    MessageBox.Show("請選擇印表機", "選擇印表機", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 確認是否要列印
+                string printerName = comboBoxPrinter.SelectedItem.ToString();
+                DialogResult result = MessageBox.Show(
+                    $"確定要列印 {copies} 份標籤到印表機「{printerName}」嗎？",
+                    "確認列印",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result == DialogResult.Yes)
+                {
+                    Console.WriteLine($"開始列印標籤: 印表機={printerName}, 份數={copies}");
+
+                    // 使用 BackgroundWorker 執行列印
+                    StartPrintJob(printerName, copies);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"列印標籤時發生錯誤: {ex.Message}");
+                MessageBox.Show($"列印標籤時發生錯誤: {ex.Message}", "列印錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 開始列印工作
+        /// </summary>
+        private void StartPrintJob(string printerName, int copies)
+        {
+            try
+            {
+                // 禁用列印按鈕防止重複點擊
+                buttonPrint.Enabled = false;
+
+                // 顯示進度對話框
+                _progressForm = new ProgressForm("正在發送列印工作...");
+
+                // 設定 BackgroundWorker
+                _printWorker = new BackgroundWorker();
+                _printWorker.WorkerReportsProgress = true;
+                _printWorker.WorkerSupportsCancellation = true;
+                _printWorker.DoWork += PrintWorker_DoWork;
+                _printWorker.ProgressChanged += PrintWorker_ProgressChanged;
+                _printWorker.RunWorkerCompleted += PrintWorker_RunWorkerCompleted;
+
+                // 準備列印資料
+                var printData = new BarTenderService.PrintJobData
+                {
+                    PrinterName = printerName,
+                    Copies = copies
+                };
+
+                // 顯示進度對話框（模態）
+                _progressForm.Show(this);
+
+                // 開始背景工作
+                _printWorker.RunWorkerAsync(printData);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"啟動列印工作時發生錯誤: {ex.Message}");
+                MessageBox.Show($"啟動列印工作時發生錯誤: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+                // 恢復按鈕狀態
+                buttonPrint.Enabled = true;
+
+                // 關閉進度對話框
+                _progressForm?.Close();
+            }
+        }
+
+        /// <summary>
+        /// BackgroundWorker 執行工作事件
+        /// </summary>
+        private void PrintWorker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            var worker = sender as BackgroundWorker;
+            var printData = e.Argument as BarTenderService.PrintJobData;
+
+            try
+            {
+                // 設定超時時間（30秒）
+                var startTime = DateTime.Now;
+                var timeout = TimeSpan.FromSeconds(30);
+
+                // 執行列印工作
+                var result = _barTenderService.PrintLabelBackground(printData, worker);
+
+                // 檢查是否超時
+                if (DateTime.Now - startTime > timeout)
+                {
+                    result.Success = false;
+                    result.Message = "列印工作超時";
+                }
+
+                e.Result = result;
+            }
+            catch (Exception ex)
+            {
+                var errorResult = new BarTenderService.PrintJobResult
+                {
+                    Success = false,
+                    Message = $"列印工作發生異常: {ex.Message}",
+                    Error = ex
+                };
+                e.Result = errorResult;
+            }
+        }
+
+        /// <summary>
+        /// BackgroundWorker 進度更新事件
+        /// </summary>
+        private void PrintWorker_ProgressChanged(object sender, ProgressChangedEventArgs e)
+        {
+            try
+            {
+                if (_progressForm != null && !_progressForm.IsDisposed)
+                {
+                    string message = e.UserState?.ToString() ?? "處理中...";
+                    _progressForm.SetMessage(message);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"更新進度時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// BackgroundWorker 完成事件
+        /// </summary>
+        private void PrintWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            try
+            {
+                // 關閉進度對話框
+                if (_progressForm != null && !_progressForm.IsDisposed)
+                {
+                    _progressForm.Close();
+                    _progressForm = null;
+                }
+
+                // 恢復按鈕狀態
+                buttonPrint.Enabled = true;
+
+                // 處理結果
+                if (e.Error != null)
+                {
+                    Console.WriteLine($"列印工作發生錯誤: {e.Error.Message}");
+                    MessageBox.Show($"列印工作發生錯誤: {e.Error.Message}", "列印錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                else if (e.Cancelled)
+                {
+                    Console.WriteLine("列印工作已取消");
+                    MessageBox.Show("列印工作已取消", "已取消", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    var result = e.Result as BarTenderService.PrintJobResult;
+                    if (result != null)
+                    {
+                        if (result.Success)
+                        {
+                            Console.WriteLine("列印工作完成");
+                            MessageBox.Show($"✅ 已傳送至印表機\n\n" +
+                                          $"印表機：{_barTenderService.GetSelectedPrinter()}\n" +
+                                          $"位置：{result.PrinterLocation}\n" +
+                                          $"份數：{result.Copies}\n\n" +
+                                          "列印工作已發送，請稍候取件。",
+                                          "列印已發送",
+                                          MessageBoxButtons.OK,
+                                          MessageBoxIcon.Information);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"列印工作失敗: {result.Message}");
+                            MessageBox.Show($"列印失敗: {result.Message}", "列印失敗", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+                }
+
+                // 清理 BackgroundWorker
+                if (_printWorker != null)
+                {
+                    _printWorker.Dispose();
+                    _printWorker = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"處理列印完成事件時發生錯誤: {ex.Message}");
+                MessageBox.Show($"處理列印結果時發生錯誤: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
         /// 表單關閉時釋放資源
         /// </summary>
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             try
             {
+                // 取消並清理 BackgroundWorker
+                if (_printWorker != null && _printWorker.IsBusy)
+                {
+                    _printWorker.CancelAsync();
+                }
+                _printWorker?.Dispose();
+
+                // 關閉進度對話框
+                _progressForm?.Close();
+
+                // 釋放其他資源
                 _apiService?.Dispose();
                 _barTenderService?.Dispose();
             }

@@ -59,6 +59,10 @@
             this.labelProductNameTitle = new System.Windows.Forms.Label();
             this.textBoxProductName = new System.Windows.Forms.TextBox();
             this.labelProductNameLength = new System.Windows.Forms.Label();
+            this.labelPrinter = new System.Windows.Forms.Label();
+            this.comboBoxPrinter = new System.Windows.Forms.ComboBox();
+            this.labelCopies = new System.Windows.Forms.Label();
+            this.textBoxCopies = new System.Windows.Forms.TextBox();
             this.openFileDialogBtw = new System.Windows.Forms.OpenFileDialog();
             this.groupBoxBtwFile.SuspendLayout();
             this.groupBoxInput.SuspendLayout();
@@ -236,6 +240,10 @@
             //
             // groupBoxPrintSettings
             //
+            this.groupBoxPrintSettings.Controls.Add(this.textBoxCopies);
+            this.groupBoxPrintSettings.Controls.Add(this.labelCopies);
+            this.groupBoxPrintSettings.Controls.Add(this.comboBoxPrinter);
+            this.groupBoxPrintSettings.Controls.Add(this.labelPrinter);
             this.groupBoxPrintSettings.Controls.Add(this.labelProductNameLength);
             this.groupBoxPrintSettings.Controls.Add(this.textBoxProductName);
             this.groupBoxPrintSettings.Controls.Add(this.labelProductNameTitle);
@@ -251,14 +259,14 @@
             this.groupBoxPrintSettings.Controls.Add(this.labelQuantity);
             this.groupBoxPrintSettings.Location = new System.Drawing.Point(12, 500);
             this.groupBoxPrintSettings.Name = "groupBoxPrintSettings";
-            this.groupBoxPrintSettings.Size = new System.Drawing.Size(1176, 150);
+            this.groupBoxPrintSettings.Size = new System.Drawing.Size(1176, 180);
             this.groupBoxPrintSettings.TabIndex = 3;
             this.groupBoxPrintSettings.TabStop = false;
             this.groupBoxPrintSettings.Text = "列印設定";
             //
             // buttonPrint
             //
-            this.buttonPrint.Location = new System.Drawing.Point(1060, 80);
+            this.buttonPrint.Location = new System.Drawing.Point(1060, 85);
             this.buttonPrint.Name = "buttonPrint";
             this.buttonPrint.Size = new System.Drawing.Size(100, 30);
             this.buttonPrint.TabIndex = 8;
@@ -268,7 +276,7 @@
             //
             // buttonUpdatePreview
             //
-            this.buttonUpdatePreview.Location = new System.Drawing.Point(730, 25);
+            this.buttonUpdatePreview.Location = new System.Drawing.Point(1060, 25);
             this.buttonUpdatePreview.Name = "buttonUpdatePreview";
             this.buttonUpdatePreview.Size = new System.Drawing.Size(100, 50);
             this.buttonUpdatePreview.TabIndex = 9;
@@ -369,6 +377,44 @@
             this.labelProductNameLength.TabIndex = 12;
             this.labelProductNameLength.Text = "長度: 0";
             //
+            // labelPrinter
+            //
+            this.labelPrinter.AutoSize = true;
+            this.labelPrinter.Location = new System.Drawing.Point(730, 25);
+            this.labelPrinter.Name = "labelPrinter";
+            this.labelPrinter.Size = new System.Drawing.Size(53, 12);
+            this.labelPrinter.TabIndex = 13;
+            this.labelPrinter.Text = "印表機：";
+            //
+            // comboBoxPrinter
+            //
+            this.comboBoxPrinter.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.comboBoxPrinter.FormattingEnabled = true;
+            this.comboBoxPrinter.Location = new System.Drawing.Point(790, 22);
+            this.comboBoxPrinter.Name = "comboBoxPrinter";
+            this.comboBoxPrinter.Size = new System.Drawing.Size(250, 20);
+            this.comboBoxPrinter.TabIndex = 14;
+            this.comboBoxPrinter.SelectedIndexChanged += new System.EventHandler(this.comboBoxPrinter_SelectedIndexChanged);
+            //
+            // labelCopies
+            //
+            this.labelCopies.AutoSize = true;
+            this.labelCopies.Location = new System.Drawing.Point(730, 55);
+            this.labelCopies.Name = "labelCopies";
+            this.labelCopies.Size = new System.Drawing.Size(53, 12);
+            this.labelCopies.TabIndex = 15;
+            this.labelCopies.Text = "列印份數：";
+            //
+            // textBoxCopies
+            //
+            this.textBoxCopies.Location = new System.Drawing.Point(790, 52);
+            this.textBoxCopies.MaxLength = 3;
+            this.textBoxCopies.Name = "textBoxCopies";
+            this.textBoxCopies.Size = new System.Drawing.Size(60, 22);
+            this.textBoxCopies.TabIndex = 16;
+            this.textBoxCopies.Text = "1";
+            this.textBoxCopies.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
+            //
             // openFileDialogBtw
             //
             this.openFileDialogBtw.Filter = "BarTender Files (*.btw)|*.btw|All Files (*.*)|*.*";
@@ -378,7 +424,7 @@
             //
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1200, 700);
+            this.ClientSize = new System.Drawing.Size(1200, 730);
             this.Controls.Add(this.groupBoxPrintSettings);
             this.Controls.Add(this.groupBoxApiData);
             this.Controls.Add(this.groupBoxInput);
@@ -429,6 +475,10 @@
         private System.Windows.Forms.Label labelProductNameTitle;
         private System.Windows.Forms.TextBox textBoxProductName;
         private System.Windows.Forms.Label labelProductNameLength;
+        private System.Windows.Forms.Label labelPrinter;
+        private System.Windows.Forms.ComboBox comboBoxPrinter;
+        private System.Windows.Forms.Label labelCopies;
+        private System.Windows.Forms.TextBox textBoxCopies;
         private System.Windows.Forms.OpenFileDialog openFileDialogBtw;
         private System.Windows.Forms.ComboBox comboBoxDocCategory;
         private System.Windows.Forms.Label labelDocCategory;

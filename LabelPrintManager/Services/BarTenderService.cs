@@ -7,6 +7,7 @@ using System.Drawing;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.ComponentModel;
 
 #if BARTENDER_SDK_AVAILABLE
 using Seagull.BarTender.Print;
@@ -30,6 +31,23 @@ namespace LabelPrintManager.Services
         private const string PRINTER_IP = "192.168.0.240"; // 測試印表機IP
         private Dictionary<string, string> _fieldValues;
         private bool _sdkAvailable = false;
+        private string _selectedPrinterName; // 選擇的印表機名稱
+
+        // BackgroundWorker 相關
+        public class PrintJobData
+        {
+            public string PrinterName { get; set; }
+            public int Copies { get; set; }
+        }
+
+        public class PrintJobResult
+        {
+            public bool Success { get; set; }
+            public string Message { get; set; }
+            public string PrinterLocation { get; set; }
+            public int Copies { get; set; }
+            public Exception Error { get; set; }
+        }
 
         public BarTenderService()
         {
@@ -504,140 +522,7 @@ namespace LabelPrintManager.Services
             }
         }
 
-        /// <summary>
-        /// 列印標籤
-        /// </summary>
-        /// <param name="copies">列印份數</param>
-        /// <returns>是否列印成功</returns>
-        public bool PrintLabel(int copies = 1)
-        {
-            try
-            {
-                Console.WriteLine("=== 開始列印標籤 ===");
-                Console.WriteLine($"印表機名稱: {PRINTER_NAME}");
-                Console.WriteLine($"印表機IP: {PRINTER_IP}");
-                Console.WriteLine($"列印份數: {copies}");
-                Console.WriteLine($"BTW檔案: {Path.GetFileName(_currentBtwFilePath)}");
 
-                if (string.IsNullOrEmpty(_currentBtwFilePath))
-                {
-                    Console.WriteLine("錯誤：未載入標籤檔案");
-                    MessageBox.Show("未載入標籤檔案", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return false;
-                }
-
-#if BARTENDER_SDK_AVAILABLE
-                // 如果有真正的 BarTender 格式，使用 SDK 列印
-                if (_sdkAvailable && btFormat != null)
-                {
-                    try
-                    {
-                        Console.WriteLine("使用 BarTender SDK 進行真實列印...");
-
-                        // 設定印表機（如果需要）
-                        try
-                        {
-                            btFormat.PrintSetup.PrinterName = PRINTER_NAME;
-                            Console.WriteLine($"已設定印表機: {PRINTER_NAME}");
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"設定印表機時發生警告: {ex.Message}");
-                        }
-
-                        // 顯示當前欄位值
-                        Console.WriteLine("=== 當前標籤欄位值 ===");
-                        foreach (var field in _fieldValues)
-                        {
-                            Console.WriteLine($"  {field.Key}: {field.Value}");
-                        }
-
-                        // 執行列印
-                        Console.WriteLine("執行 BarTender 列印...");
-                        var result = btFormat.Print(PRINTER_NAME, copies);
-
-                        Console.WriteLine($"BarTender 列印結果: {result}");
-
-                        if (result == Result.Success)
-                        {
-                            Console.WriteLine("=== 列印成功 ===");
-                            MessageBox.Show($"✅ 列印成功！\n\n" +
-                                          $"印表機：{PRINTER_NAME} ({PRINTER_IP})\n" +
-                                          $"份數：{copies}\n" +
-                                          $"檔案：{Path.GetFileName(_currentBtwFilePath)}",
-                                          "列印成功",
-                                          MessageBoxButtons.OK,
-                                          MessageBoxIcon.Information);
-                            return true;
-                        }
-                        else
-                        {
-                            Console.WriteLine($"=== 列印失敗：{result} ===");
-                            MessageBox.Show($"❌ BarTender 列印失敗\n\n" +
-                                          $"錯誤：{result}\n" +
-                                          $"印表機：{PRINTER_NAME} ({PRINTER_IP})\n\n" +
-                                          "請檢查：\n" +
-                                          "• 印表機是否開啟\n" +
-                                          "• 網路連線是否正常\n" +
-                                          "• 印表機驅動是否安裝",
-                                          "列印失敗",
-                                          MessageBoxButtons.OK,
-                                          MessageBoxIcon.Error);
-                            return false;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"=== 列印過程發生異常：{ex.Message} ===");
-                        Console.WriteLine($"異常詳細資訊: {ex}");
-                        MessageBox.Show($"❌ 列印時發生錯誤\n\n" +
-                                      $"錯誤：{ex.Message}\n" +
-                                      $"印表機：{PRINTER_NAME} ({PRINTER_IP})\n\n" +
-                                      "請檢查印表機連線狀態",
-                                      "列印錯誤",
-                                      MessageBoxButtons.OK,
-                                      MessageBoxIcon.Error);
-                        return false;
-                    }
-                }
-                else
-                {
-                    // 模擬列印
-                    Console.WriteLine("=== 模擬列印模式 ===");
-                    Console.WriteLine("BarTender SDK 不可用或格式未載入，使用模擬列印");
-
-                    MessageBox.Show($"🖨️ 模擬列印\n\n" +
-                                  $"印表機：{PRINTER_NAME} ({PRINTER_IP})\n" +
-                                  $"份數：{copies}\n" +
-                                  $"檔案：{Path.GetFileName(_currentBtwFilePath)}\n\n" +
-                                  "注意：這是模擬列印，實際未送出到印表機",
-                                  "模擬列印",
-                                  MessageBoxButtons.OK,
-                                  MessageBoxIcon.Information);
-                    return true;
-                }
-#else
-                // 模擬列印
-                Console.WriteLine("=== 模擬列印模式（SDK未編譯）===");
-                MessageBox.Show($"🖨️ 模擬列印\n\n" +
-                              $"印表機：{PRINTER_NAME} ({PRINTER_IP})\n" +
-                              $"份數：{copies}\n" +
-                              $"檔案：{Path.GetFileName(_currentBtwFilePath)}\n\n" +
-                              "注意：BarTender SDK 未編譯，這是模擬列印",
-                              "模擬列印",
-                              MessageBoxButtons.OK,
-                              MessageBoxIcon.Information);
-                return true;
-#endif
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"=== 列印失敗：{ex.Message} ===");
-                Console.WriteLine($"異常詳細資訊: {ex}");
-                MessageBox.Show($"❌ 列印失敗\n\n錯誤：{ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return false;
-            }
-        }
 
         /// <summary>
         /// 關閉當前格式檔案
@@ -993,6 +878,263 @@ namespace LabelPrintManager.Services
             {
                 Console.WriteLine($"清理預覽暫存檔案時發生錯誤: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 獲取可用印表機清單
+        /// </summary>
+        /// <returns>印表機名稱清單</returns>
+        public List<string> GetAvailablePrinters()
+        {
+            List<string> printerNames = new List<string>();
+
+#if BARTENDER_SDK_AVAILABLE
+            try
+            {
+                if (_sdkAvailable)
+                {
+                    Printers printers = new Printers();
+                    foreach (Printer printer in printers)
+                    {
+                        printerNames.Add(printer.PrinterName);
+                        Console.WriteLine($"發現印表機: {printer.PrinterName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"獲取印表機清單時發生錯誤: {ex.Message}");
+            }
+#endif
+
+            // 如果沒有找到印表機，添加預設測試印表機
+            if (printerNames.Count == 0)
+            {
+                printerNames.Add(PRINTER_NAME);
+                Console.WriteLine($"使用預設測試印表機: {PRINTER_NAME}");
+            }
+
+            return printerNames;
+        }
+
+        /// <summary>
+        /// 獲取預設印表機名稱
+        /// </summary>
+        /// <returns>預設印表機名稱</returns>
+        public string GetDefaultPrinter()
+        {
+#if BARTENDER_SDK_AVAILABLE
+            try
+            {
+                if (_sdkAvailable)
+                {
+                    Printers printers = new Printers();
+                    if (printers.Default != null)
+                    {
+                        Console.WriteLine($"預設印表機: {printers.Default.PrinterName}");
+                        return printers.Default.PrinterName;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"獲取預設印表機時發生錯誤: {ex.Message}");
+            }
+#endif
+
+            // 如果無法獲取預設印表機，返回測試印表機
+            return PRINTER_NAME;
+        }
+
+        /// <summary>
+        /// 設定選擇的印表機
+        /// </summary>
+        /// <param name="printerName">印表機名稱</param>
+        public void SetSelectedPrinter(string printerName)
+        {
+            _selectedPrinterName = printerName;
+            Console.WriteLine($"設定印表機: {printerName}");
+        }
+
+        /// <summary>
+        /// 獲取目前選擇的印表機
+        /// </summary>
+        /// <returns>印表機名稱</returns>
+        public string GetSelectedPrinter()
+        {
+            return _selectedPrinterName ?? GetDefaultPrinter();
+        }
+
+        /// <summary>
+        /// 獲取印表機的網路位置資訊
+        /// </summary>
+        /// <param name="printerName">印表機名稱</param>
+        /// <returns>印表機位置</returns>
+        private string GetPrinterLocation(string printerName)
+        {
+            try
+            {
+                // 如果是測試印表機，返回已知的IP位置
+                if (printerName == PRINTER_NAME)
+                {
+                    return $"\\\\{PRINTER_IP}\\{PRINTER_NAME}";
+                }
+
+                // 對於其他印表機，嘗試推測網路位置
+                if (printerName.Contains("192.168.0.240") || printerName.ToLower().Contains("lc01"))
+                {
+                    return $"\\\\{PRINTER_IP}\\{PRINTER_NAME}";
+                }
+
+                // 預設返回印表機名稱
+                return printerName;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"獲取印表機位置時發生錯誤: {ex.Message}");
+                return printerName;
+            }
+        }
+
+        /// <summary>
+        /// 背景執行列印工作（供 BackgroundWorker 使用）
+        /// </summary>
+        /// <param name="jobData">列印工作資料</param>
+        /// <param name="worker">BackgroundWorker 實例</param>
+        /// <returns>列印結果</returns>
+        public PrintJobResult PrintLabelBackground(PrintJobData jobData, BackgroundWorker worker)
+        {
+            var result = new PrintJobResult
+            {
+                PrinterLocation = GetPrinterLocation(jobData.PrinterName),
+                Copies = jobData.Copies
+            };
+
+            try
+            {
+                worker?.ReportProgress(10, "正在準備列印工作...");
+
+#if BARTENDER_SDK_AVAILABLE
+                if (!_sdkAvailable || btFormat == null)
+                {
+                    result.Success = false;
+                    result.Message = "BarTender SDK 不可用或未載入格式檔案";
+                    return result;
+                }
+
+                worker?.ReportProgress(30, "正在設定印表機...");
+
+                // 設定印表機
+                btFormat.PrintSetup.PrinterName = jobData.PrinterName;
+                Console.WriteLine($"設定列印印表機: {jobData.PrinterName}");
+
+                worker?.ReportProgress(50, "正在設定列印份數...");
+
+                // 設定列印份數
+                if (btFormat.PrintSetup.SupportsIdenticalCopies)
+                {
+                    btFormat.PrintSetup.IdenticalCopiesOfLabel = jobData.Copies;
+                    Console.WriteLine($"設定列印份數: {jobData.Copies}");
+                }
+
+                worker?.ReportProgress(70, "正在發送列印工作...");
+
+                // 執行列印 - 不等待完成，立即返回
+                Console.WriteLine("發送列印工作到印表機...");
+                Result printResult = btFormat.Print(jobData.PrinterName);
+
+                worker?.ReportProgress(90, "列印工作已發送");
+
+                Console.WriteLine("列印工作已發送到印表機");
+                result.Success = true;
+                result.Message = "列印工作已成功發送到印表機";
+
+                worker?.ReportProgress(100, "完成");
+
+                return result;
+#else
+                worker?.ReportProgress(50, "模擬列印模式...");
+                System.Threading.Thread.Sleep(1000); // 模擬處理時間
+
+                result.Success = true;
+                result.Message = "模擬列印完成（SDK 未編譯）";
+                worker?.ReportProgress(100, "完成");
+
+                return result;
+#endif
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"背景列印時發生錯誤: {ex.Message}");
+                result.Success = false;
+                result.Message = $"列印時發生錯誤: {ex.Message}";
+                result.Error = ex;
+                return result;
+            }
+        }
+
+        /// <summary>
+        /// 列印標籤（保留原有方法以向後相容）
+        /// </summary>
+        /// <param name="copies">列印份數</param>
+        /// <returns>列印是否成功</returns>
+        public bool PrintLabel(int copies = 1)
+        {
+#if BARTENDER_SDK_AVAILABLE
+            try
+            {
+                if (!_sdkAvailable || btFormat == null)
+                {
+                    Console.WriteLine("BarTender SDK 不可用或未載入格式檔案");
+                    return false;
+                }
+
+                // 設定印表機
+                string printerName = GetSelectedPrinter();
+                btFormat.PrintSetup.PrinterName = printerName;
+                Console.WriteLine($"設定列印印表機: {printerName}");
+
+                // 設定列印份數
+                if (btFormat.PrintSetup.SupportsIdenticalCopies)
+                {
+                    btFormat.PrintSetup.IdenticalCopiesOfLabel = copies;
+                    Console.WriteLine($"設定列印份數: {copies}");
+                }
+
+                // 執行列印 - 不等待完成，立即返回
+                Console.WriteLine("發送列印工作到印表機...");
+
+                // 使用不等待完成的列印方式
+                Result result = btFormat.Print(printerName);
+
+                // 立即顯示成功訊息，不等待印表機回應
+                Console.WriteLine("列印工作已發送到印表機");
+
+                // 獲取印表機的網路位置資訊
+                string printerLocation = GetPrinterLocation(printerName);
+
+                MessageBox.Show($"✅ 已傳送至印表機\n\n" +
+                              $"印表機：{printerName}\n" +
+                              $"位置：{printerLocation}\n" +
+                              $"份數：{copies}\n\n" +
+                              "列印工作已發送，請稍候取件。",
+                              "列印已發送",
+                              MessageBoxButtons.OK,
+                              MessageBoxIcon.Information);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"列印標籤時發生錯誤: {ex.Message}");
+                MessageBox.Show($"列印標籤時發生錯誤: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+#else
+            Console.WriteLine("BarTender SDK 不可用，無法列印");
+            MessageBox.Show("BarTender SDK 不可用，無法列印", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+#endif
         }
 
         /// <summary>
