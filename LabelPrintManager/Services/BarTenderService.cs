@@ -33,6 +33,11 @@ namespace LabelPrintManager.Services
         private bool _sdkAvailable = false;
         private string _selectedPrinterName; // 選擇的印表機名稱
 
+        // 預覽尺寸記錄（用於圖片後處理）
+        private int _originalPreviewWidth = 0;
+        private int _originalPreviewHeight = 0;
+        private bool _hasRecordedOriginalSize = false;
+
         // BackgroundWorker 相關
         public class PrintJobData
         {
@@ -100,6 +105,12 @@ namespace LabelPrintManager.Services
 #endif
 
                 _currentBtwFilePath = btwFilePath;
+
+                // 重置預覽尺寸記錄
+                _originalPreviewWidth = 0;
+                _originalPreviewHeight = 0;
+                _hasRecordedOriginalSize = false;
+                Console.WriteLine("已重置預覽尺寸記錄，將在首次預覽時記錄標準尺寸");
 
 #if BARTENDER_SDK_AVAILABLE
                 // 使用 BarTender SDK 載入 BTW 檔案
@@ -182,6 +193,39 @@ namespace LabelPrintManager.Services
             {
                 Console.WriteLine("使用 BarTender SDK 生成真正的標籤預覽...");
 
+                // 記錄當前格式狀態
+                LogCurrentFormatSettings("預覽生成開始前");
+
+                // 🎯 確保預覽使用標準設定以保持一致性
+                bool needsUpdate = false;
+
+                // 檢查並修正印表機設定
+                if (btFormat.PrintSetup.PrinterName != "PDF")
+                {
+                    Console.WriteLine($"偵測到非 PDF 印表機: {btFormat.PrintSetup.PrinterName}");
+                    Console.WriteLine("為確保預覽一致性，切換為 PDF 印表機");
+                    btFormat.PrintSetup.PrinterName = "PDF";
+                    needsUpdate = true;
+                }
+
+                // 檢查並修正列印份數設定
+                if (btFormat.PrintSetup.IdenticalCopiesOfLabel != 2)
+                {
+                    Console.WriteLine($"偵測到列印份數: {btFormat.PrintSetup.IdenticalCopiesOfLabel}");
+                    Console.WriteLine("為確保預覽一致性，設定為 2 份");
+                    btFormat.PrintSetup.IdenticalCopiesOfLabel = 2;
+                    needsUpdate = true;
+                }
+
+                if (needsUpdate)
+                {
+                    LogCurrentFormatSettings("切換為標準預覽設定後");
+                }
+                else
+                {
+                    Console.WriteLine("已使用標準預覽設定（PDF 印表機 + 2 份），預覽將保持一致性");
+                }
+
                 // 使用 exe 執行檔當前目錄作為預覽圖片暫存路徑
                 string exeDirectory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
                 string tempDir = Path.Combine(exeDirectory, "PreviewTemp", $"bt_preview_{DateTime.Now:yyyyMMdd_HHmmss}");
@@ -190,6 +234,19 @@ namespace LabelPrintManager.Services
                 try
                 {
                     Console.WriteLine("使用 ExportPrintPreviewToFile 方法...");
+
+                    // 記錄匯出參數
+                    Console.WriteLine("=== 預覽匯出參數 ===");
+                    Console.WriteLine($"輸出目錄: {tempDir}");
+                    Console.WriteLine($"檔案名稱模式: Preview%PageNumber%.jpg");
+                    Console.WriteLine($"圖片格式: {ImageType.JPEG}");
+                    Console.WriteLine($"色彩深度: {Seagull.BarTender.Print.ColorDepth.ColorDepth24bit}");
+                    Console.WriteLine($"解析度: 800x600");
+                    Console.WriteLine($"背景色: White");
+                    Console.WriteLine("====================");
+
+                    // 記錄匯出前的格式狀態
+                    LogCurrentFormatSettings("預覽匯出前");
 
                     // 使用官方範例的方法
                     Messages messages;
@@ -207,6 +264,10 @@ namespace LabelPrintManager.Services
                     );
 
                     Console.WriteLine($"ExportPrintPreviewToFile 結果: {result}");
+
+                    // 記錄匯出後的格式狀態
+                    LogCurrentFormatSettings("預覽匯出後");
+                    Console.WriteLine("預覽已使用 PDF 印表機生成，確保顯示一致性");
 
                     // 檢查是否有訊息
                     if (messages != null && messages.Count > 0)
@@ -230,9 +291,17 @@ namespace LabelPrintManager.Services
 
                         using (var fileStream = new FileStream(previewFile, FileMode.Open, FileAccess.Read))
                         {
-                            var image = new Bitmap(fileStream);
-                            Console.WriteLine($"預覽圖片尺寸: {image.Width}x{image.Height}");
-                            return new Bitmap(image); // 創建副本以避免檔案鎖定
+                            var originalImage = new Bitmap(fileStream);
+                            Console.WriteLine($"預覽圖片尺寸: {originalImage.Width}x{originalImage.Height}");
+
+                            // 創建副本以避免檔案鎖定
+                            var imageCopy = new Bitmap(originalImage);
+                            originalImage.Dispose();
+
+                            // 🎯 應用圖片尺寸處理
+                            var processedImage = ProcessPreviewImageSize(imageCopy);
+
+                            return processedImage;
                         }
                     }
                     else
@@ -966,6 +1035,288 @@ namespace LabelPrintManager.Services
         }
 
         /// <summary>
+        /// 記錄當前格式設定狀態（用於除錯）
+        /// </summary>
+        /// <param name="stage">階段描述</param>
+        private void LogCurrentFormatSettings(string stage)
+        {
+            try
+            {
+#if BARTENDER_SDK_AVAILABLE
+                if (_sdkAvailable && btFormat != null)
+                {
+                    Console.WriteLine($"=== {stage} - 格式設定狀態 ===");
+                    Console.WriteLine($"印表機名稱: {btFormat.PrintSetup.PrinterName ?? "未設定"}");
+
+                    // 頁面設定（嘗試獲取可用的屬性）
+                    if (btFormat.PageSetup != null)
+                    {
+                        try
+                        {
+                            // 嘗試獲取頁面設定資訊，如果屬性不存在就跳過
+                            Console.WriteLine($"頁面設定物件: {btFormat.PageSetup.GetType().Name}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"無法獲取頁面設定: {ex.Message}");
+                        }
+                    }
+
+                    // 列印設定
+                    if (btFormat.PrintSetup != null)
+                    {
+                        Console.WriteLine($"列印份數: {btFormat.PrintSetup.IdenticalCopiesOfLabel}");
+                        Console.WriteLine($"支援相同份數: {btFormat.PrintSetup.SupportsIdenticalCopies}");
+                    }
+
+                    Console.WriteLine($"格式檔案路徑: {_currentBtwFilePath ?? "未載入"}");
+                    Console.WriteLine("================================");
+                }
+                else
+                {
+                    Console.WriteLine($"=== {stage} - SDK 不可用或格式未載入 ===");
+                }
+#else
+                Console.WriteLine($"=== {stage} - SDK 未編譯 ===");
+#endif
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"記錄格式設定時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 調整圖片尺寸到標準預覽大小
+        /// </summary>
+        /// <param name="originalImage">原始圖片</param>
+        /// <param name="targetWidth">目標寬度</param>
+        /// <param name="targetHeight">目標高度</param>
+        /// <returns>調整後的圖片</returns>
+        private Image ResizeImageToStandardSize(Image originalImage, int targetWidth, int targetHeight)
+        {
+            try
+            {
+                Console.WriteLine($"調整圖片尺寸：{originalImage.Width}x{originalImage.Height} → {targetWidth}x{targetHeight}");
+
+                Bitmap resizedImage = new Bitmap(targetWidth, targetHeight);
+                using (Graphics graphics = Graphics.FromImage(resizedImage))
+                {
+                    // 設定高品質縮放
+                    graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                    graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                    graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+
+                    // 繪製調整後的圖片
+                    graphics.DrawImage(originalImage, 0, 0, targetWidth, targetHeight);
+                }
+
+                Console.WriteLine("圖片尺寸調整完成");
+                return resizedImage;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"調整圖片尺寸時發生錯誤: {ex.Message}");
+                return originalImage; // 返回原始圖片
+            }
+        }
+
+        /// <summary>
+        /// 重新載入當前 BTW 檔案（內部使用，不跳出對話框）
+        /// </summary>
+        private bool ReloadCurrentBtwFile()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_currentBtwFilePath))
+                {
+                    Console.WriteLine("無法重新載入：BTW 檔案路徑為空");
+                    return false;
+                }
+
+                Console.WriteLine($"重新載入 BTW 檔案: {Path.GetFileName(_currentBtwFilePath)}");
+
+#if BARTENDER_SDK_AVAILABLE
+                if (_sdkAvailable)
+                {
+                    try
+                    {
+                        // 關閉當前格式
+                        if (btFormat != null)
+                        {
+                            btFormat.Close(SaveOptions.DoNotSaveChanges);
+                            btFormat = null;
+                        }
+
+                        // 重新開啟檔案
+                        btFormat = btEngine.Documents.Open(_currentBtwFilePath);
+
+                        // 重置預覽尺寸記錄
+                        _originalPreviewWidth = 0;
+                        _originalPreviewHeight = 0;
+                        _hasRecordedOriginalSize = false;
+                        Console.WriteLine("已重置預覽尺寸記錄，將在首次預覽時記錄標準尺寸");
+
+                        Console.WriteLine("BTW 檔案重新載入成功，格式狀態已恢復");
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"重新載入 BTW 檔案時發生錯誤: {ex.Message}");
+                        return false;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("BarTender SDK 不可用，無法重新載入");
+                    return false;
+                }
+#else
+                Console.WriteLine("BarTender SDK 未編譯，無法重新載入");
+                return false;
+#endif
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"重新載入 BTW 檔案時發生錯誤: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 重新生成預覽（在重新載入後使用）
+        /// </summary>
+        /// <returns>重新生成的預覽圖片</returns>
+        private Image RegeneratePreview()
+        {
+            try
+            {
+                Console.WriteLine("重新生成預覽圖片...");
+
+                // 重新填入欄位資料（如果有的話）
+                if (_fieldValues != null && _fieldValues.Count > 0)
+                {
+                    Console.WriteLine("重新填入欄位資料...");
+
+                    // 創建欄位資料的副本以避免集合修改異常
+                    var fieldValuesCopy = new Dictionary<string, string>(_fieldValues);
+
+                    foreach (var field in fieldValuesCopy)
+                    {
+                        try
+                        {
+                            SetFieldValue(field.Key, field.Value);
+                        }
+                        catch (Exception fieldEx)
+                        {
+                            Console.WriteLine($"設定欄位 {field.Key} 時發生錯誤: {fieldEx.Message}");
+                        }
+                    }
+                    Console.WriteLine("欄位資料重新填入完成");
+                }
+
+                // 重新生成預覽
+                return ExportLabelToImage();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"重新生成預覽時發生錯誤: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 記錄和檢查預覽尺寸，必要時重新載入檔案
+        /// </summary>
+        /// <param name="previewImage">預覽圖片</param>
+        /// <returns>處理後的圖片</returns>
+        private Image ProcessPreviewImageSize(Image previewImage)
+        {
+            try
+            {
+                int currentWidth = previewImage.Width;
+                int currentHeight = previewImage.Height;
+
+                Console.WriteLine($"當前預覽圖片尺寸: {currentWidth}x{currentHeight}");
+
+                // 如果是第一次生成預覽，記錄為標準尺寸
+                if (!_hasRecordedOriginalSize)
+                {
+                    _originalPreviewWidth = currentWidth;
+                    _originalPreviewHeight = currentHeight;
+                    _hasRecordedOriginalSize = true;
+                    Console.WriteLine($"記錄標準預覽尺寸: {_originalPreviewWidth}x{_originalPreviewHeight}");
+                    return previewImage;
+                }
+
+                // 檢查尺寸是否與標準尺寸一致
+                if (currentWidth != _originalPreviewWidth || currentHeight != _originalPreviewHeight)
+                {
+                    Console.WriteLine($"偵測到預覽尺寸異常！");
+                    Console.WriteLine($"標準尺寸: {_originalPreviewWidth}x{_originalPreviewHeight}");
+                    Console.WriteLine($"當前尺寸: {currentWidth}x{currentHeight}");
+                    Console.WriteLine("正在重新載入 BTW 檔案以恢復正常狀態...");
+
+                    // 釋放異常圖片資源
+                    previewImage.Dispose();
+
+                    // 重新載入 BTW 檔案
+                    if (ReloadCurrentBtwFile())
+                    {
+                        Console.WriteLine("BTW 檔案重新載入成功，正在重新生成預覽...");
+
+                        // 重新生成預覽
+                        Image regeneratedImage = RegeneratePreview();
+                        if (regeneratedImage != null)
+                        {
+                            Console.WriteLine($"預覽重新生成成功，尺寸: {regeneratedImage.Width}x{regeneratedImage.Height}");
+                            Console.WriteLine("預覽已通過重新載入 BTW 檔案恢復正常");
+                            return regeneratedImage;
+                        }
+                        else
+                        {
+                            Console.WriteLine("重新生成預覽失敗，嘗試使用基本預覽生成");
+
+                            // 如果重新生成失敗，嘗試基本的預覽生成
+                            try
+                            {
+                                Image basicPreview = ExportLabelToImage();
+                                if (basicPreview != null)
+                                {
+                                    Console.WriteLine($"基本預覽生成成功，尺寸: {basicPreview.Width}x{basicPreview.Height}");
+                                    return basicPreview;
+                                }
+                            }
+                            catch (Exception basicEx)
+                            {
+                                Console.WriteLine($"基本預覽生成也失敗: {basicEx.Message}");
+                            }
+
+                            Console.WriteLine("所有預覽生成方法都失敗，返回空圖片");
+                            return null;
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("重新載入 BTW 檔案失敗，無法恢復預覽");
+                        return null;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("預覽尺寸正常，無需調整");
+                    return previewImage;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"處理預覽圖片尺寸時發生錯誤: {ex.Message}");
+                return previewImage; // 返回原始圖片
+            }
+        }
+
+        /// <summary>
         /// 獲取印表機的網路位置資訊
         /// </summary>
         /// <param name="printerName">印表機名稱</param>
@@ -1022,11 +1373,17 @@ namespace LabelPrintManager.Services
                     return result;
                 }
 
+                // 記錄列印前的格式狀態
+                LogCurrentFormatSettings("列印工作開始前");
+
                 worker?.ReportProgress(30, "正在設定印表機...");
 
                 // 設定印表機
                 btFormat.PrintSetup.PrinterName = jobData.PrinterName;
                 Console.WriteLine($"設定列印印表機: {jobData.PrinterName}");
+
+                // 記錄設定印表機後的格式狀態
+                LogCurrentFormatSettings("設定印表機後");
 
                 worker?.ReportProgress(50, "正在設定列印份數...");
 
@@ -1046,6 +1403,10 @@ namespace LabelPrintManager.Services
                 worker?.ReportProgress(90, "列印工作已發送");
 
                 Console.WriteLine("列印工作已發送到印表機");
+
+                // 記錄列印完成後的格式狀態
+                LogCurrentFormatSettings("列印工作完成後");
+
                 result.Success = true;
                 result.Message = "列印工作已成功發送到印表機";
 
