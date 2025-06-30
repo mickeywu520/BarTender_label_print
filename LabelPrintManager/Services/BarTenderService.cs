@@ -1376,7 +1376,43 @@ namespace LabelPrintManager.Services
                 // 記錄列印前的格式狀態
                 LogCurrentFormatSettings("列印工作開始前");
 
-                worker?.ReportProgress(30, "正在設定印表機...");
+                worker?.ReportProgress(20, "正在同步欄位資料...");
+
+                // 🎯 關鍵修復：在列印前重新設定所有欄位值，確保資料同步
+                Console.WriteLine("=== 列印前重新同步所有欄位值 ===");
+                if (_fieldValues != null && _fieldValues.Count > 0)
+                {
+                    // 創建欄位資料的副本以避免集合修改異常
+                    var fieldValuesCopy = new Dictionary<string, string>(_fieldValues);
+                    
+                    foreach (var field in fieldValuesCopy)
+                    {
+                        try
+                        {
+                            // 重新設定每個欄位值到 BarTender 格式
+                            if (_sdkAvailable && btFormat != null)
+                            {
+                                bool fieldSet = TrySetSubString(field.Key, field.Value);
+                                if (!fieldSet)
+                                {
+                                    fieldSet = TrySetDatabaseField(field.Key, field.Value);
+                                }
+                                Console.WriteLine($"列印前同步欄位 '{field.Key}' = '{field.Value}' (成功: {fieldSet})");
+                            }
+                        }
+                        catch (Exception fieldEx)
+                        {
+                            Console.WriteLine($"列印前同步欄位 '{field.Key}' 時發生錯誤: {fieldEx.Message}");
+                        }
+                    }
+                    Console.WriteLine($"列印前欄位同步完成，共處理 {fieldValuesCopy.Count} 個欄位");
+                }
+                else
+                {
+                    Console.WriteLine("警告：沒有欄位資料需要同步");
+                }
+
+                worker?.ReportProgress(40, "正在設定印表機...");
 
                 // 設定印表機
                 btFormat.PrintSetup.PrinterName = jobData.PrinterName;
@@ -1385,7 +1421,7 @@ namespace LabelPrintManager.Services
                 // 記錄設定印表機後的格式狀態
                 LogCurrentFormatSettings("設定印表機後");
 
-                worker?.ReportProgress(50, "正在設定列印份數...");
+                worker?.ReportProgress(60, "正在設定列印份數...");
 
                 // 設定列印份數
                 if (btFormat.PrintSetup.SupportsIdenticalCopies)
@@ -1394,13 +1430,13 @@ namespace LabelPrintManager.Services
                     Console.WriteLine($"設定列印份數: {jobData.Copies}");
                 }
 
-                worker?.ReportProgress(70, "正在發送列印工作...");
+                worker?.ReportProgress(80, "正在發送列印工作...");
 
                 // 執行列印 - 不等待完成，立即返回
                 Console.WriteLine("發送列印工作到印表機...");
                 Result printResult = btFormat.Print(jobData.PrinterName);
 
-                worker?.ReportProgress(90, "列印工作已發送");
+                worker?.ReportProgress(95, "列印工作已發送");
 
                 Console.WriteLine("列印工作已發送到印表機");
 

@@ -880,6 +880,31 @@ namespace LabelPrintManager
                 {
                     Console.WriteLine($"開始列印標籤: 印表機={printerName}, 份數={copies}");
 
+                    // 🎯 關鍵修復：列印前確保所有欄位值都是最新的
+                    Console.WriteLine("=== 列印前最終欄位同步 ===");
+                    try
+                    {
+                        if (_currentReceiptData != null)
+                        {
+                            Console.WriteLine("使用 API 資料進行最終同步");
+                            // 重新設定所有欄位值（包含使用者修改的列印設定）
+                            SetBarTenderFields();
+                        }
+                        else
+                        {
+                            Console.WriteLine("使用當前輸入值進行最終同步");
+                            // 只使用使用者輸入的列印設定值
+                            UpdatePreviewWithCurrentSettings();
+                        }
+                        Console.WriteLine("列印前欄位同步完成");
+                    }
+                    catch (Exception syncEx)
+                    {
+                        Console.WriteLine($"列印前欄位同步發生錯誤: {syncEx.Message}");
+                        MessageBox.Show($"列印前欄位同步發生錯誤: {syncEx.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return; // 如果同步失敗，不執行列印
+                    }
+
                     // 使用 BackgroundWorker 執行列印
                     StartPrintJob(printerName, copies);
                 }
